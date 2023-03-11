@@ -3,17 +3,25 @@ import MainLayout from '../components/layouts/main-layout';
 import {
   Heading,
   HeadingSize,
+  IconMumble,
   Stack,
+  StackAlignItems,
   StackDirection,
+  StackJustifyContent,
   StackSpacing,
+  TextButton,
+  TextButtonColor,
+  TextButtonDisplayMode,
+  TextButtonSize,
 } from '@smartive-education/design-system-component-library-team-ost';
 import Head from 'next/head';
 import { MumbleCard, MumbleCardVariant } from '../components/cards/mumble-card';
 import { MumbleType } from '../types/mumble';
 import { WriteCard, WriteCardVariant } from '../components/cards/write-card';
 import { fetchMumbles } from '../helpers/qwacker-api/mumble-api-functions';
-import { fetchUsers } from '../helpers/qwacker-api/user-api-functions';
 import { getToken } from 'next-auth/jwt';
+import { useSession } from 'next-auth/react';
+import { useState } from 'react';
 
 type PageProps = {
   count: number;
@@ -21,11 +29,27 @@ type PageProps = {
 };
 
 export default function PageHome({
-  count: count,
+  count: initialCount,
   mumbles: initialMumbles,
 }: PageProps): InferGetStaticPropsType<typeof getServerSideProps> {
-  // const [mumbles, setMumbles] = useState(initialMumbles);
-  const mumbles = initialMumbles;
+  const [mumbles, setMumbles] = useState(initialMumbles);
+  const [loading, setLoading] = useState(false);
+  const [count, setCount] = useState(initialCount);
+  const [hasMore, setHasMore] = useState(initialMumbles.length < count);
+
+  const { data: session } = useSession();
+
+  const loadMore = async () => {
+    const { count, mumbles: newMumbles } = await fetchMumbles({
+      limit: 10,
+      offset: mumbles.length,
+      token: session?.accessToken,
+    });
+
+    setLoading(false);
+    setHasMore(mumbles.length + newMumbles.length < count);
+    setMumbles([...mumbles, ...newMumbles]);
+  };
 
   return (
     <MainLayout>
@@ -44,10 +68,34 @@ export default function PageHome({
         <Stack direction={StackDirection.col} spacing={StackSpacing.s} withDivider={true}>
           <>
             {/* eslint-disable-next-line @typescript-eslint/no-empty-function */}
-            <WriteCard variant={WriteCardVariant.main} handleChange={() => {}} handleSubmit={() => {}} />
+            {session && (
+              <WriteCard
+                variant={WriteCardVariant.main}
+                handleChange={() => console.log('click')}
+                handleSubmit={() => console.log('click')}
+              />
+            )}
             {mumbles.map((mumble) => (
               <MumbleCard key={mumble.id} variant={MumbleCardVariant.timeline} mumble={mumble} />
             ))}
+            {hasMore && (
+              <Stack
+                alignItems={StackAlignItems.center}
+                justifyContent={StackJustifyContent.center}
+                spacing={StackSpacing.xl}
+              >
+                <TextButton
+                  ariaLabel="Start mumble"
+                  color={TextButtonColor.gradient}
+                  displayMode={TextButtonDisplayMode.inline}
+                  icon={<IconMumble />}
+                  onClick={() => loadMore()}
+                  size={TextButtonSize.l}
+                >
+                  {loading ? '...' : 'Weitere Mumbles laden'}
+                </TextButton>
+              </Stack>
+            )}
           </>
         </Stack>
       </>
@@ -59,21 +107,20 @@ export const getServerSideProps: GetServerSideProps = async ({ req }: GetServerS
   try {
     const token = await getToken({ req });
 
-    if (!token) {
-      return {
-        redirect: {
-          destination: '/login',
-          permanent: false,
-        },
-      };
-    }
+    // if (!token) {
+    //   return {
+    //     redirect: {
+    //       destination: '/login',
+    //       permanent: false,
+    //     },
+    //   };
+    // }
 
-    const { count, mumbles } = await fetchMumbles();
-    const { users } = await fetchUsers({ accessToken: token?.accessToken as string });
+    // eslint-disable-next-line prefer-const
+    let { count, mumbles } = await fetchMumbles({ token: token?.accessToken as string });
 
-    console.log(users);
+    mumbles = mumbles.filter((mumble) => mumble.type === 'post');
 
-    //TODO -> find/map Userdata as creator or get User by ID
     return {
       props: {
         count,
